@@ -107,6 +107,12 @@ const browser = await puppeteer.connect({
 const pages = await browser.pages();
 const page = pages[0];
 
+// 强制使用亮色模式和屏幕媒体，避免打印出暗色背景
+await page.emulateMediaType('screen');
+await page.emulateMediaFeatures([
+  { name: 'prefers-color-scheme', value: 'light' },
+]);
+
 // 步骤1: 导航到站点并收集文章
 console.log(`\n📍 步骤 1/5: 访问站点并加载所有文章...`);
 
@@ -275,7 +281,79 @@ for (let i = 0; i < articles.length; i++) {
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
     await page.waitForSelector('article, main, [class*="post"]', { timeout: 30000 });
     await new Promise(r => setTimeout(r, 2000));
-    
+
+    // 处理懒加载图片并确保加载完成，避免 PDF 中缺图
+    await page.evaluate(async () => {
+      const imgs = Array.from(document.querySelectorAll('img'));
+
+      // 将懒加载属性写回 src/srcset，强制提前加载
+      for (const img of imgs) {
+        const dataSrc = img.getAttribute('data-src') || img.dataset?.src;
+        const dataSrcset = img.getAttribute('data-srcset') || img.dataset?.srcset;
+        const cfSrc = img.getAttribute('data-cfsrc');
+        if (!img.src && (dataSrc || cfSrc)) img.src = dataSrc || cfSrc;
+        if (!img.srcset && dataSrcset) img.srcset = dataSrcset;
+        img.loading = 'eager';
+        img.decoding = 'sync';
+      }
+
+      // 触发懒加载：快速滚动一遍页面
+      const step = 800;
+      for (let y = 0; y < document.body.scrollHeight; y += step) {
+        window.scrollTo(0, y);
+        await new Promise(r => setTimeout(r, 120));
+      }
+      window.scrollTo(0, 0);
+
+      // 等待所有图片完成加载/解码，防止空白占位
+      await Promise.all(
+        imgs.map((img) => {
+          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+          return new Promise((res) => {
+            const done = () => res();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+          });
+        }),
+      );
+    });
+
+    // 关闭夜间模式，保持白底黑字（不改动其他打印样式）
+    await page.evaluate(() => {
+      const STYLE_ID = '__substack_dl_light_mode__';
+      if (!document.getElementById(STYLE_ID)) {
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+          :root { color-scheme: light !important; }
+          html, body { background: #ffffff !important; color: #000000 !important; }
+          article, main, [class*="post"], [data-theme], [class*="dark"], [class*="night"] {
+            background: #ffffff !important;
+            color: #000000 !important;
+          }
+          pre, code, pre code, code pre, [class*="code"], [class*="highlight"], [class*="monospace"] {
+            background: #f5f5f5 !important;
+            color: #111111 !important;
+            border-radius: 6px !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      const targets = [document.documentElement, document.body];
+      for (const el of targets) {
+        if (!el) continue;
+        el.classList.remove('dark', 'night-mode');
+        el.removeAttribute('data-theme');
+        el.style.setProperty('background', '#ffffff', 'important');
+        el.style.setProperty('color', '#000000', 'important');
+        el.style.setProperty('color-scheme', 'light', 'important');
+      }
+
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) metaTheme.setAttribute('content', '#ffffff');
+    });
+
     await page.pdf({
       path: pdfPath,
       format: 'A4',
