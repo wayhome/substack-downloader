@@ -358,6 +358,7 @@ for (let i = 0; i < articles.length; i++) {
       path: pdfPath,
       format: 'A4',
       printBackground: true,
+      scale: 0.9,
       margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' }
     });
     
