@@ -4,8 +4,8 @@ import { runCli } from "./cli.js";
 
 try {
   await runCli({
-    commandName: "substack_downloader.js",
-    defaultFormat: "pdf",
+    commandName: "substack_epub.js",
+    defaultFormat: "epub",
   });
 } catch (error) {
   console.error(`❌ 执行失败: ${error.message}`);

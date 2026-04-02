@@ -5,10 +5,13 @@
   "type": "module",
   "main": "src/substack_downloader.js",
   "bin": {
-    "substack-downloader": "./src/substack_downloader.js"
+    "substack-downloader": "./src/substack_downloader.js",
+    "substack-epub": "./src/substack_epub.js"
   },
   "scripts": {
     "start": "node src/substack_downloader.js",
+    "epub": "node src/substack_epub.js",
+    "cli": "node src/cli.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "format": "prettier --write \"**/*.{js,json,md}\"",
     "lint": "eslint src/**/*.js"
@@ -41,11 +44,12 @@
   },
   "packageManager": "pnpm@9.15.0",
   "dependencies": {
-    "puppeteer-core": "^21.0.0"
+    "epub-gen": "^0.1.0",
+    "puppeteer-core": "^21.0.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "eslint": "^8.50.0",
     "prettier": "^3.0.0"
   }
 }
-

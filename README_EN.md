@@ -1,6 +1,6 @@
 # 📚 Substack Downloader
 
-> Download all articles from any Substack site and automatically generate a PDF ebook with table of contents
+> Download any Substack publication and generate PDF / EPUB (or both) in one run
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)](https://nodejs.org/)
@@ -11,17 +11,19 @@ English | [简体中文](README.md)
 ## ✨ Features
 
 - 🌐 **Works with all Substack sites** - Compatible with any Substack blog
-- 📑 **Auto-generate TOC** - PDF with clickable bookmarks for navigation
+- 📘 **Dual output formats** - `PDF`, `EPUB`, or `PDF+EPUB`
+- 📑 **Auto-generated navigation** - PDF bookmarks + EPUB chapter TOC
 - ⏰ **Chronological order** - From oldest to newest, complete archive
+- 🖼️ **Kindle-friendly image pipeline** - EPUB images optimized with `sharp`
 - 🗜️ **Smart compression** - Reduce file size by 70-80% while maintaining clarity
 - 💾 **Resume capability** - Skip already downloaded articles
-- 🎯 **Fully automated** - One command does everything
-- 📊 **Detailed statistics** - Real-time progress, success rate, file sizes, etc.
+- 🔁 **Built-in retries** - Discovery and rendering stages can auto-retry
+- 📊 **Detailed statistics** - Progress, success rate, file size, retries, output paths
 
 ## 📸 Demo
 
 ```bash
-$ ./src/substack_downloader.js https://www.algos.org/
+$ node src/cli.js https://www.algos.org --format both --quality ebook
 
 ╔════════════════════════════════════════════════════════════╗
 ║              📚 Substack Downloader                        ║
@@ -29,12 +31,12 @@ $ ./src/substack_downloader.js https://www.algos.org/
 
 🌐 Target: https://www.algos.org/
 📁 Output: ./downloads/algos_org
-🗜️  Quality: ebook
+🧾 Format: BOTH
+🔁 Retries: 3
 
 ✓ Found 67 articles (2023-02 to 2025-11)
-✓ PDF generation: 67/67 (100%)
-✓ Merge complete: 578 pages, 67 bookmarks
-✓ Compression: 112MB → 21MB (↓81%)
+✓ PDF generation completed
+✓ EPUB generated: ./downloads/algos_org/algos_org.epub
 ```
 
 ## 📁 Project Structure
@@ -42,7 +44,12 @@ $ ./src/substack_downloader.js https://www.algos.org/
 ```
 substack-downloader/
 ├── src/
-│   ├── substack_downloader.js   # Main program ⭐
+│   ├── cli.js                    # Unified entry (--format) ⭐
+│   ├── substack_downloader.js    # Compatibility entry (default PDF)
+│   ├── substack_epub.js          # EPUB entry (default EPUB)
+│   ├── renderers/                # PDF / EPUB renderers
+│   ├── lib/                      # Shared browser/discovery/retry libs
+│   ├── epub_generator.js         # EPUB generator
 │   ├── start.js                  # Chrome launcher
 │   ├── merge_pdfs.py             # PDF merging
 │   └── compress_pdf.py           # PDF compression
@@ -58,12 +65,12 @@ substack-downloader/
 ### Prerequisites
 
 - **Node.js** >= 16.0.0
-- **Python** >= 3.10
 - **Chrome/Chromium** browser
-- **Ghostscript** (for compression)
-- **uv** - Python package manager (recommended, 10-100x faster than pip)
+- **Python** >= 3.10 (PDF pipeline only)
+- **Ghostscript** (PDF compression only)
+- **uv** (PDF pipeline only, recommended)
 
-> 💡 **About uv**: [uv](https://github.com/astral-sh/uv) is a next-generation Python package manager written in Rust, blazingly fast. If you prefer pip, you can still use `pip install PyPDF2`.
+> 💡 If you export EPUB only, you can skip Python/uv/Ghostscript for now.
 
 ### Installation
 
@@ -120,17 +127,23 @@ node src/start.js --profile
 #### Command Line Usage
 
 ```bash
-# Basic usage
-./src/substack_downloader.js https://example.substack.com
+# 1) Legacy entry (defaults to PDF)
+node src/substack_downloader.js https://example.substack.com
 
-# High quality (for printing)
-./src/substack_downloader.js https://example.substack.com --quality printer
+# 2) EPUB entry (defaults to EPUB)
+node src/substack_epub.js https://example.substack.com
 
-# Custom output directory
-./src/substack_downloader.js https://example.substack.com --output-dir ./my_books
+# 3) Unified entry (recommended)
+node src/cli.js https://example.substack.com --format both --retries 3
 
-# Skip compression (keep original size)
-./src/substack_downloader.js https://example.substack.com --skip-compress
+# EPUB only
+node src/cli.js https://example.substack.com --format epub
+
+# EPUB only (force refresh chapter cache)
+node src/cli.js https://example.substack.com --format epub --refresh-epub-cache
+
+# PDF only (high quality)
+node src/cli.js https://example.substack.com --format pdf --quality printer
 ```
 
 ## 📖 Documentation
@@ -168,11 +181,11 @@ node src/start.js --profile
 ## 🛠️ How It Works
 
 ```
-1. Visit site         2. Scroll & load      3. Print PDFs
-   Archive page    →    All articles    →    Visit each article
-        ↓                                        ↓
-4. Merge PDFs       ←    5. Compress      ←    Individual PDFs
-   With bookmarks          Ghostscript         (67 files)
+1. Discover posts (archive + sitemap), then sort chronologically
+2. Route by --format
+   ├─ PDF: render each post -> merge bookmarks -> optional compression
+   └─ EPUB: extract article HTML -> download/optimize images -> package EPUB
+3. Print summary stats (success rate, retries, output files)
 ```
 
 ## 📊 Compression Quality Comparison
@@ -187,13 +200,16 @@ node src/start.js --profile
 ## 🔧 Configuration Options
 
 ```bash
-./src/substack_downloader.js <url> [options]
+node src/cli.js <url> [options]
 
 Options:
   --output-dir <dir>    Output directory (default: ./downloads/<site-name>)
-  --skip-compress       Skip PDF compression
-  --quality <level>     Compression quality: screen, ebook, printer, prepress (default: ebook)
-  --help, -h           Show help message
+  --format <mode>       Output format: pdf | epub | both (default: pdf)
+  --retries <n>         Retry count for network/rendering, 0-10 (default: 3)
+  --refresh-epub-cache  Force ignore EPUB chapter cache and refetch
+  --skip-compress       Skip PDF compression (PDF/both only)
+  --quality <level>     PDF compression quality: screen, ebook, printer, prepress (default: ebook)
+  --help, -h            Show help message
 ```
 
 ## 📁 Output Structure
@@ -201,12 +217,17 @@ Options:
 ```
 downloads/<site-name>/
 ├── articles.txt              # List of article URLs
+├── <site-name>.epub          # EPUB output (epub/both mode)
 ├── pdfs/                     # Individual PDF files
 │   ├── 001_article-1.pdf
 │   ├── 002_article-2.pdf
 │   └── ...
-├── <site-name>_complete.pdf     # Original merged PDF
-└── <site-name>_compressed.pdf   # Compressed PDF (recommended)
+├── <site-name>_complete.pdf     # Original merged PDF (pdf/both mode)
+├── <site-name>_compressed.pdf   # Compressed PDF (optional)
+└── .cache/                      # Image/runtime cache
+    └── epub/
+        ├── manifest.json        # Chapter cache manifest
+        └── chapters/*.json      # Per-article chapter cache
 ```
 
 ## 🤝 Contributing
@@ -259,4 +280,3 @@ Questions or suggestions? Feel free to:
 ---
 
 ⭐ If this project helps you, please give it a Star!
-

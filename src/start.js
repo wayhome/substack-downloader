@@ -115,6 +115,7 @@ for (let i = 0; i < 30; i++) {
     const browser = await puppeteer.connect({
       browserURL: "http://localhost:9222",
       defaultViewport: null,
+      protocolTimeout: 120000, // 2 分钟超时，与下载器保持一致
     });
     await browser.disconnect();
     connected = true;

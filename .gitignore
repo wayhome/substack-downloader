@@ -53,6 +53,7 @@ all_articles*.txt
 all_articles*.json
 sorted_articles.txt
 articles_by_time.txt
+tasks/
 
 # Environment
 .env

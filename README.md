@@ -1,6 +1,6 @@
 # 📚 Substack Downloader
 
-> 一键下载任意 Substack 站点的所有文章，自动生成带目录的 PDF 电子书
+> 一键下载任意 Substack 站点文章，支持生成 PDF / EPUB（或同时生成）
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)](https://nodejs.org/)
@@ -11,17 +11,19 @@
 ## ✨ 特性
 
 - 🌐 **支持所有 Substack 站点** - 适用于任何 Substack 博客
-- 📑 **自动生成目录** - PDF 带有可点击的书签导航
+- 📘 **双格式输出** - 支持 `PDF`、`EPUB`、`PDF+EPUB`
+- 📑 **自动生成目录** - PDF 带可点击书签，EPUB 带章节导航
 - ⏰ **时间顺序排列** - 从最早到最新，完整记录
+- 🖼️ **Kindle 友好图片处理** - EPUB 图片自动优化（`sharp`）
 - 🗜️ **智能压缩** - 可减小 70-80% 文件大小，保持清晰度
 - 💾 **断点续传** - 已下载的文章自动跳过
-- 🎯 **完全自动化** - 一条命令搞定所有步骤
-- 📊 **详细统计** - 实时进度、成功率、文件大小等
+- 🔁 **内置重试机制** - 发现与渲染阶段支持失败自动重试
+- 📊 **详细统计** - 实时进度、成功率、文件大小、重试次数等
 
 ## 📸 演示
 
 ```bash
-$ ./src/substack_downloader.js https://www.algos.org/
+$ node src/cli.js https://www.algos.org --format both --quality ebook
 
 ╔════════════════════════════════════════════════════════════╗
 ║              📚 Substack 下载器                            ║
@@ -29,12 +31,12 @@ $ ./src/substack_downloader.js https://www.algos.org/
 
 🌐 目标站点: https://www.algos.org/
 📁 输出目录: ./downloads/algos_org
-🗜️  压缩质量: ebook
+🧾 输出格式: BOTH
+🔁 重试次数: 3
 
 ✓ 找到 67 篇文章 (2023-02 至 2025-11)
-✓ PDF 打印完成: 67/67 (100%)
-✓ 合并完成: 578 页, 67 个书签
-✓ 压缩完成: 112MB → 21MB (↓81%)
+✓ PDF 生成完成
+✓ EPUB 生成完成: ./downloads/algos_org/algos_org.epub
 ```
 
 ## 📁 项目结构
@@ -42,7 +44,12 @@ $ ./src/substack_downloader.js https://www.algos.org/
 ```
 substack-downloader/
 ├── src/
-│   ├── substack_downloader.js   # 主程序 ⭐
+│   ├── cli.js                    # 统一入口（--format）⭐
+│   ├── substack_downloader.js    # 兼容入口（默认 PDF）
+│   ├── substack_epub.js          # EPUB 入口（默认 EPUB）
+│   ├── renderers/                # PDF / EPUB 渲染器
+│   ├── lib/                      # 浏览器/发现/重试公共库
+│   ├── epub_generator.js         # EPUB 生成器
 │   ├── start.js                  # Chrome 启动器
 │   ├── merge_pdfs.py             # PDF 合并
 │   └── compress_pdf.py           # PDF 压缩
@@ -58,12 +65,12 @@ substack-downloader/
 ### 前置要求
 
 - **Node.js** >= 16.0.0
-- **Python** >= 3.10
 - **Chrome/Chromium** 浏览器
-- **Ghostscript** (用于压缩)
-- **uv** - Python 包管理器（推荐，比 pip 快 10-100 倍）
+- **Python** >= 3.10（仅 PDF 流程需要）
+- **Ghostscript**（仅 PDF 压缩需要）
+- **uv**（仅 PDF 流程需要，推荐）
 
-> 💡 **关于 uv**: [uv](https://github.com/astral-sh/uv) 是新一代 Python 包管理器，用 Rust 编写，速度极快。如果你已习惯 pip，也可以继续使用 `pip install PyPDF2`。
+> 💡 如果你只导出 EPUB，可先不安装 Python/uv/Ghostscript。
 
 ### 安装
 
@@ -120,17 +127,23 @@ node src/start.js --profile
 #### 命令行使用
 
 ```bash
-# 基本用法
-./src/substack_downloader.js https://example.substack.com
+# 1) 旧入口（默认 PDF）
+node src/substack_downloader.js https://example.substack.com
 
-# 高质量版本（适合打印）
-./src/substack_downloader.js https://example.substack.com --quality printer
+# 2) EPUB 入口（默认 EPUB）
+node src/substack_epub.js https://example.substack.com
 
-# 自定义输出目录
-./src/substack_downloader.js https://example.substack.com --output-dir ./my_books
+# 3) 统一入口（推荐）
+node src/cli.js https://example.substack.com --format both --retries 3
 
-# 跳过压缩（保留原始大小）
-./src/substack_downloader.js https://example.substack.com --skip-compress
+# 仅 EPUB
+node src/cli.js https://example.substack.com --format epub
+
+# 仅 EPUB（强制刷新章节缓存）
+node src/cli.js https://example.substack.com --format epub --refresh-epub-cache
+
+# 仅 PDF（高质量）
+node src/cli.js https://example.substack.com --format pdf --quality printer
 ```
 
 ## 📖 文档
@@ -168,11 +181,11 @@ node src/start.js --profile
 ## 🛠️ 工作原理
 
 ```
-1. 访问站点          2. 滚动加载          3. 打印PDF
-   Archive页面    →    所有文章列表    →    逐个访问打印
-        ↓                                        ↓
-4. 合并PDF          ←    5. 压缩优化    ←    生成单独PDF
-   带目录书签              Ghostscript         (67个文件)
+1. 发现文章（archive + sitemap）并按时间排序
+2. 根据 --format 路由到渲染器
+   ├─ PDF: 逐篇打印 -> 合并目录 -> 可选压缩
+   └─ EPUB: 抽取正文 -> 下载/优化图片 -> 打包 EPUB
+3. 输出统计信息（成功率、重试次数、产物路径）
 ```
 
 ## 📊 压缩质量对比
@@ -187,13 +200,16 @@ node src/start.js --profile
 ## 🔧 配置选项
 
 ```bash
-./src/substack_downloader.js <url> [options]
+node src/cli.js <url> [options]
 
 选项:
   --output-dir <dir>    输出目录 (默认: ./downloads/<站点名>)
-  --skip-compress       跳过 PDF 压缩
-  --quality <level>     压缩质量: screen, ebook, printer, prepress (默认: ebook)
-  --help, -h           显示帮助信息
+  --format <mode>       输出格式: pdf | epub | both (默认: pdf)
+  --retries <n>         网络与渲染重试次数，0-10 (默认: 3)
+  --refresh-epub-cache  强制忽略 EPUB 章节缓存并重新抓取
+  --skip-compress       跳过 PDF 压缩（仅 PDF/both 生效）
+  --quality <level>     PDF 压缩质量: screen, ebook, printer, prepress (默认: ebook)
+  --help, -h            显示帮助信息
 ```
 
 ## 📁 输出结构
@@ -201,12 +217,17 @@ node src/start.js --profile
 ```
 downloads/<站点名>/
 ├── articles.txt              # 文章 URL 列表
+├── <站点名>.epub             # EPUB 输出（epub/both 模式）
 ├── pdfs/                     # 单独的 PDF 文件
 │   ├── 001_article-1.pdf
 │   ├── 002_article-2.pdf
 │   └── ...
-├── <站点名>_complete.pdf     # 原始合并 PDF
-└── <站点名>_compressed.pdf   # 压缩后 PDF (推荐)
+├── <站点名>_complete.pdf     # 原始合并 PDF（pdf/both 模式）
+├── <站点名>_compressed.pdf   # 压缩后 PDF（可选）
+└── .cache/                   # 图片与运行缓存
+    └── epub/
+        ├── manifest.json     # 章节缓存索引
+        └── chapters/*.json   # 单篇章节缓存（用于下次跳过重抓）
 ```
 
 ## 🤝 贡献
@@ -259,4 +280,3 @@ npm run lint
 ---
 
 ⭐ 如果这个项目对你有帮助，请给个 Star！
-
